@@ -3,6 +3,8 @@ package movingaverage
 import (
 	"errors"
 	"math"
+
+	"github.com/montanaflynn/stats"
 )
 
 // @author Robin Verlangen
@@ -41,6 +43,15 @@ func (ma *MovingAverage) Avg() float64 {
 	// Finalize average and return
 	avg := sum / float64(n)
 	return avg
+}
+
+func (ma *MovingAverage) Median() float64 {
+	values := ma.filledValues()
+	if values == nil {
+		return 0
+	}
+	median, _ := stats.Median(values)
+	return median
 }
 
 func (ma *MovingAverage) filledValues() []float64 {

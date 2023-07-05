@@ -25,6 +25,12 @@ func (c *ConcurrentMovingAverage) Avg() float64 {
 	return c.ma.Avg()
 }
 
+func (c *ConcurrentMovingAverage) Median() float64 {
+	c.mux.RLock()
+	defer c.mux.RUnlock()
+	return c.ma.Median()
+}
+
 func (c *ConcurrentMovingAverage) Min() (float64, error) {
 	c.mux.RLock()
 	defer c.mux.RUnlock()
