@@ -1,5 +1,7 @@
 # `github.com/cdzombak/golang-moving-average`
 
+[![Go Reference](https://pkg.go.dev/badge/github.com/cdzombak/golang-moving-average.svg)](https://pkg.go.dev/github.com/cdzombak/golang-moving-average)
+
 Moving average/median/stats implementation for Go. This project provides a moving window of `n` values, for which you can calculate the mean and median, or use any of the statistical functions provided by the excellent & well-tested [github.com/montanaflynn/stats](montanaflynn/stats) library.
 
 This project's repo and package names come from [RobinUS2/golang-moving-average](https://github.com/RobinUS2/golang-moving-average), from which it was originally forked. @cdzombak's fork:
