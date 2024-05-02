@@ -1,16 +1,16 @@
 package movingaverage
 
-// @author Robin Verlangen
-// Test the moving average for Go package
-
 import (
 	"math"
+	"slices"
 	"sync"
 	"testing"
+
+	"github.com/montanaflynn/stats"
 )
 
 func TestMovingAverage(t *testing.T) {
-	a := New(5)
+	a := New(Options{Window: 5})
 	if a.Avg() != 0 {
 		t.Error("expected 0", a.Avg())
 	}
@@ -56,7 +56,7 @@ func TestMovingAverage(t *testing.T) {
 }
 
 func TestNaN(t *testing.T) {
-	a := New(5)
+	a := New(Options{Window: 5})
 	a.Add(1)
 	a.Add(math.NaN())
 	if !math.IsNaN(a.Avg()) {
@@ -65,8 +65,7 @@ func TestNaN(t *testing.T) {
 }
 
 func TestNaNIgnore(t *testing.T) {
-	a := New(5)
-	a.SetIgnoreNanValues(true)
+	a := New(Options{Window: 5, IgnoreNanValues: true})
 	a.Add(1)
 	a.Add(math.NaN())
 	if math.IsNaN(a.Avg()) {
@@ -78,7 +77,7 @@ func TestNaNIgnore(t *testing.T) {
 }
 
 func TestInf(t *testing.T) {
-	a := New(5)
+	a := New(Options{Window: 5})
 	a.Add(1)
 	a.Add(math.Inf(1))
 	if !math.IsInf(a.Avg(), 0) {
@@ -87,8 +86,7 @@ func TestInf(t *testing.T) {
 }
 
 func TestInfIgnore(t *testing.T) {
-	a := New(5)
-	a.SetIgnoreInfValues(true)
+	a := New(Options{Window: 5, IgnoreInfValues: true})
 	a.Add(1)
 	a.Add(math.Inf(1))
 	if math.IsInf(a.Avg(), 0) {
@@ -99,38 +97,8 @@ func TestInfIgnore(t *testing.T) {
 	}
 }
 
-func TestMax(t *testing.T) {
-	a := New(5)
-	if max, err := a.Max(); max != 0 || err == nil {
-		t.Error(max, err)
-	}
-	a.Add(10)
-	if max, err := a.Max(); max != 10 || err != nil {
-		t.Error(max, err)
-	}
-	a.Add(100, 10000, 1000)
-	if max, err := a.Max(); max != 10000 || err != nil {
-		t.Error(max, err)
-	}
-}
-
-func TestMin(t *testing.T) {
-	a := New(5)
-	if min, err := a.Min(); min != 0 || err == nil {
-		t.Error(min, err)
-	}
-	a.Add(10)
-	if min, err := a.Min(); min != 10 || err != nil {
-		t.Error(min, err)
-	}
-	a.Add(100, 10000, 1000)
-	if min, err := a.Min(); min != 10 || err != nil {
-		t.Error(min, err)
-	}
-}
-
 func TestCount(t *testing.T) {
-	a := New(5)
+	a := New(Options{Window: 5})
 	if a.Count() != 0 {
 		t.Error(a.Count())
 	}
@@ -150,7 +118,7 @@ func TestCount(t *testing.T) {
 
 func TestConcurrent(t *testing.T) {
 	// this test needs to be run with -race flag
-	a := Concurrent(New(5))
+	a := NewConcurrent(Options{Window: 5})
 
 	const numRoutines = 5
 	wg := sync.WaitGroup{}
@@ -161,8 +129,6 @@ func TestConcurrent(t *testing.T) {
 				a.Add(float64(n))
 			}
 			a.Avg()
-			a.Min()
-			a.Max()
 			a.Count()
 			a.Values()
 			a.SlotsFilled()
@@ -170,4 +136,78 @@ func TestConcurrent(t *testing.T) {
 		}()
 	}
 	wg.Wait()
+}
+
+func TestMin(t *testing.T) {
+	a := New(Options{Window: 5})
+	a.Add(1)
+	a.Add(2)
+	a.Add(3)
+
+	if a.Min() != 1 {
+		t.Error(a.Min())
+	}
+}
+
+func TestMax(t *testing.T) {
+	a := New(Options{Window: 5})
+	a.Add(1)
+	a.Add(2)
+	a.Add(3)
+
+	if a.Max() != 3 {
+		t.Error(a.Max())
+	}
+}
+
+func TestMedian(t *testing.T) {
+	a := New(Options{Window: 5})
+	a.Add(1)
+	a.Add(2)
+	a.Add(3)
+
+	if a.Median() != 2 {
+		t.Error(a.Median())
+	}
+}
+
+func TestWindow(t *testing.T) {
+	a := New(Options{Window: 5})
+	if a.Window() != 5 {
+		t.Error(a.Window())
+	}
+}
+
+func TestUnsafeDoStat(t *testing.T) {
+	a := New(Options{Window: 3})
+	a.Add(10)
+	a.Add(20)
+	a.Add(1)
+	a.Add(2)
+	a.Add(3)
+
+	result, err := a.UnsafeDoStat(stats.Mean)
+	if err != nil {
+		t.Error(err)
+	}
+	if result != 2 {
+		t.Error(result)
+	}
+}
+
+func TestUnsafeDo(t *testing.T) {
+	a := New(Options{Window: 3})
+	a.Add(1)
+	a.Add(2)
+	a.Add(3)
+
+	err := a.UnsafeDo(func(data stats.Float64Data) error {
+		if !slices.Equal(data, stats.Float64Data{1, 2, 3}) {
+			t.Error(data)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Error(err)
+	}
 }

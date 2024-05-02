@@ -1,19 +1,89 @@
 package movingaverage
 
 import (
-	"errors"
 	"math"
 
 	"github.com/montanaflynn/stats"
 )
 
-// @author Robin Verlangen
-// Moving average implementation for Go
+// MovingStats holds the most recently added N values (N = Options.Window)
+// and provides a bridge from those data to the github.com/montanaflynn/stats
+// Float64Data type for statistical calculations.
+//
+// Avg() and Median() are the only statistical methods provided by this package;
+// they wrap the relevant functions from github.com/montanaflynn/stats but return
+// 0.0 if an error occurs.
+//
+// (Avg() is the (non-geometric) mean of the values, and Median() is the median.)
+type MovingStats interface {
+	// Add adds the given values to the moving stats instance.
+	Add(values ...float64)
 
-var errNoValues = errors.New("no values")
+	// Window returns the number of values kept in the moving stats instance.
+	Window() int
 
-type MovingAverage struct {
-	Window          int
+	// SlotsFilled returns whether all slots in the moving stats instance have been filled.
+	SlotsFilled() bool
+
+	// Values returns the values in the moving stats instance, as stats.Float64Data.
+	Values() stats.Float64Data
+
+	// Count returns the number of values in the moving stats instance.
+	Count() int
+
+	// Avg returns the average of the values in the moving stats instance.
+	// If no values have been added or any other error occurs, 0.0 is returned.
+	Avg() float64
+
+	// Median returns the median of the values in the moving stats instance.
+	// If no values have been added or any other error occurs, 0.0 is returned.
+	Median() float64
+
+	// Min returns the minimum of the values in the moving stats instance.
+	// If no values have been added or any other error occurs, 0.0 is returned.
+	Min() float64
+
+	// Max returns the maximum of the values in the moving stats instance.
+	// If no values have been added or any other error occurs, 0.0 is returned.
+	Max() float64
+
+	// UnsafeDoStat runs the given function on the values in the moving stats instance.
+	// If the function returns an error, that error is returned.
+	// Functions passed to UnsafeDoStat must not modify the values slice or call Add(). This will result in undefined behavior.
+	UnsafeDoStat(func(stats.Float64Data) (float64, error)) (float64, error)
+
+	// UnsafeDo runs the given function on the values in the moving stats instance.
+	// If the function returns an error, that error is returned.
+	// Functions passed to UnsafeDo must not modify the values slice or call Add(). This will result in undefined behavior.
+	UnsafeDo(func(stats.Float64Data) error) error
+}
+
+// Options configures a new movingStats instance.
+type Options struct {
+	// Whether to ignore NaN values when adding values to the moving stats instance.
+	IgnoreNanValues bool
+
+	// Whether to ignore Inf values when adding values to the moving stats instance.
+	IgnoreInfValues bool
+
+	// The number of values to keep in the moving stats instance.
+	Window int
+}
+
+// New returns a new MovingStats instance with the given options.
+func New(opts Options) MovingStats {
+	return &movingStats{
+		values:          make([]float64, opts.Window),
+		valPos:          0,
+		slotsFilled:     false,
+		window:          opts.Window,
+		ignoreInfValues: opts.IgnoreInfValues,
+		ignoreNanValues: opts.IgnoreNanValues,
+	}
+}
+
+type movingStats struct {
+	window          int
 	values          []float64
 	valPos          int
 	slotsFilled     bool
@@ -21,41 +91,8 @@ type MovingAverage struct {
 	ignoreInfValues bool
 }
 
-func (ma *MovingAverage) SetIgnoreInfValues(ignoreInfValues bool) {
-	ma.ignoreInfValues = ignoreInfValues
-}
-
-func (ma *MovingAverage) SetIgnoreNanValues(ignoreNanValues bool) {
-	ma.ignoreNanValues = ignoreNanValues
-}
-
-func (ma *MovingAverage) Avg() float64 {
-	var sum = float64(0)
-	values := ma.filledValues()
-	if values == nil {
-		return 0
-	}
-	n := len(values)
-	for _, value := range values {
-		sum += value
-	}
-
-	// Finalize average and return
-	avg := sum / float64(n)
-	return avg
-}
-
-func (ma *MovingAverage) Median() float64 {
-	values := ma.filledValues()
-	if values == nil {
-		return 0
-	}
-	median, _ := stats.Median(values)
-	return median
-}
-
-func (ma *MovingAverage) filledValues() []float64 {
-	var c = ma.Window - 1
+func (ma *movingStats) filledValues() stats.Float64Data {
+	var c = ma.window - 1
 
 	// Are all slots filled? If not, ignore unused
 	if !ma.slotsFilled {
@@ -68,7 +105,7 @@ func (ma *MovingAverage) filledValues() []float64 {
 	return ma.values[0 : c+1]
 }
 
-func (ma *MovingAverage) Add(values ...float64) {
+func (ma *movingStats) Add(values ...float64) {
 	for _, val := range values {
 		// ignore NaN?
 		if ma.ignoreNanValues && math.IsNaN(val) {
@@ -84,7 +121,7 @@ func (ma *MovingAverage) Add(values ...float64) {
 		ma.values[ma.valPos] = val
 
 		// Increment value position
-		ma.valPos = (ma.valPos + 1) % ma.Window
+		ma.valPos = (ma.valPos + 1) % ma.window
 
 		// Did we just go back to 0, effectively meaning we filled all registers?
 		if !ma.slotsFilled && ma.valPos == 0 {
@@ -93,51 +130,62 @@ func (ma *MovingAverage) Add(values ...float64) {
 	}
 }
 
-func (ma *MovingAverage) SlotsFilled() bool {
+func (ma *movingStats) Window() int {
+	return ma.window
+}
+
+func (ma *movingStats) SlotsFilled() bool {
 	return ma.slotsFilled
 }
 
-func (ma *MovingAverage) Values() []float64 {
-	return ma.filledValues()
+func (ma *movingStats) Values() stats.Float64Data {
+	internal := ma.filledValues()
+	retv := make(stats.Float64Data, len(internal))
+	_ = copy(retv, internal)
+	return retv
+
 }
 
-func (ma *MovingAverage) Count() int {
-	return len(ma.Values())
+func (ma *movingStats) Count() int {
+	return len(ma.filledValues())
 }
 
-func (ma *MovingAverage) Max() (float64, error) {
-	best := math.MaxFloat64 * -1
-	values := ma.filledValues()
-	if values == nil {
-		return 0, errNoValues
+func (ma *movingStats) Avg() float64 {
+	retv, err := ma.filledValues().Mean()
+	if err != nil {
+		return 0.0
 	}
-	for _, value := range values {
-		if value > best {
-			best = value
-		}
-	}
-	return best, nil
+	return retv
 }
 
-func (ma *MovingAverage) Min() (float64, error) {
-	if !ma.slotsFilled && ma.valPos == 0 {
-		return 0, errNoValues
+func (ma *movingStats) Median() float64 {
+	retv, err := ma.filledValues().Median()
+	if err != nil {
+		return 0.0
 	}
-	best := math.MaxFloat64
-	values := ma.filledValues()
-	for _, value := range values {
-		if value < best {
-			best = value
-		}
-	}
-	return best, nil
+	return retv
 }
 
-func New(window int) *MovingAverage {
-	return &MovingAverage{
-		Window:      window,
-		values:      make([]float64, window),
-		valPos:      0,
-		slotsFilled: false,
+func (ma *movingStats) Min() float64 {
+	retv, err := ma.filledValues().Min()
+	if err != nil {
+		return 0.0
 	}
+	return retv
+}
+
+func (ma *movingStats) Max() float64 {
+	retv, err := ma.filledValues().Max()
+	if err != nil {
+		return 0.0
+	}
+	return retv
+}
+
+func (ma *movingStats) UnsafeDoStat(f func(stats.Float64Data) (float64, error)) (float64, error) {
+	return f(ma.filledValues())
+}
+
+func (ma *movingStats) UnsafeDo(f func(stats.Float64Data) error) error {
+	return f(ma.filledValues())
 }

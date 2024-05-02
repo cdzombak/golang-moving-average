@@ -1,62 +1,86 @@
 package movingaverage
 
-import "sync"
+import (
+	"sync"
 
-type ConcurrentMovingAverage struct {
-	ma  *MovingAverage
+	"github.com/montanaflynn/stats"
+)
+
+type concurrentMovingStats struct {
+	ma  MovingStats
 	mux sync.RWMutex
 }
 
-func Concurrent(ma *MovingAverage) *ConcurrentMovingAverage {
-	return &ConcurrentMovingAverage{
-		ma: ma,
+// NewConcurrent returns a new concurrency-safe MovingStats instance
+// with the given options.
+func NewConcurrent(opts Options) MovingStats {
+	return &concurrentMovingStats{
+		ma: New(opts),
 	}
 }
 
-func (c *ConcurrentMovingAverage) Add(values ...float64) {
+func (c *concurrentMovingStats) Add(values ...float64) {
 	c.mux.Lock()
+	defer c.mux.Unlock()
 	c.ma.Add(values...)
-	c.mux.Unlock()
 }
 
-func (c *ConcurrentMovingAverage) Avg() float64 {
+func (c *concurrentMovingStats) Window() int {
 	c.mux.RLock()
 	defer c.mux.RUnlock()
-	return c.ma.Avg()
+	return c.ma.Window()
 }
 
-func (c *ConcurrentMovingAverage) Median() float64 {
+func (c *concurrentMovingStats) SlotsFilled() bool {
 	c.mux.RLock()
 	defer c.mux.RUnlock()
-	return c.ma.Median()
+	return c.ma.SlotsFilled()
 }
 
-func (c *ConcurrentMovingAverage) Min() (float64, error) {
-	c.mux.RLock()
-	defer c.mux.RUnlock()
-	return c.ma.Min()
-}
-
-func (c *ConcurrentMovingAverage) Max() (float64, error) {
-	c.mux.RLock()
-	defer c.mux.RUnlock()
-	return c.ma.Max()
-}
-
-func (c *ConcurrentMovingAverage) Count() int {
-	c.mux.RLock()
-	defer c.mux.RUnlock()
-	return c.ma.Count()
-}
-
-func (c *ConcurrentMovingAverage) Values() []float64 {
+func (c *concurrentMovingStats) Values() stats.Float64Data {
 	c.mux.RLock()
 	defer c.mux.RUnlock()
 	return c.ma.Values()
 }
 
-func (c *ConcurrentMovingAverage) SlotsFilled() bool {
+func (c *concurrentMovingStats) Count() int {
 	c.mux.RLock()
 	defer c.mux.RUnlock()
-	return c.ma.SlotsFilled()
+	return c.ma.Count()
+}
+
+func (c *concurrentMovingStats) Avg() float64 {
+	c.mux.RLock()
+	defer c.mux.RUnlock()
+	return c.ma.Avg()
+}
+
+func (c *concurrentMovingStats) Median() float64 {
+	c.mux.RLock()
+	defer c.mux.RUnlock()
+	return c.ma.Median()
+}
+
+func (c *concurrentMovingStats) Min() float64 {
+	c.mux.RLock()
+	defer c.mux.RUnlock()
+	return c.ma.Min()
+}
+
+func (c *concurrentMovingStats) Max() float64 {
+	c.mux.RLock()
+	defer c.mux.RUnlock()
+	return c.ma.Max()
+}
+
+func (c *concurrentMovingStats) UnsafeDoStat(f func(stats.Float64Data) (float64, error)) (float64, error) {
+	c.mux.RLock()
+	defer c.mux.RUnlock()
+	return c.ma.UnsafeDoStat(f)
+}
+
+func (c *concurrentMovingStats) UnsafeDo(f func(stats.Float64Data) error) error {
+	c.mux.RLock()
+	defer c.mux.RUnlock()
+	return c.ma.UnsafeDo(f)
 }
